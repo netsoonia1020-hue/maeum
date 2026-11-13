@@ -1,17 +1,23 @@
 import { QUESTIONS, SCALE, TYPES, LEVELS, COMMON_MESSAGES, scoreTest } from './data-stress.js';
 import {
   calculateSaju, compatibility, STEMS, STEMS_KO, BRANCHES_KO, TEN_GODS, TEN_GOD_GROUP, TWELVE_STAGES,
-  tenGod, tenGodOfBranch, branchRelation, dayPillarOf, yearPillarOf, monthPillarsOf, currentSajuYear,
+  tenGod, branchRelation, dayPillarOf, yearPillarOf, monthPillarsOf, currentSajuYear,
 } from './saju.js';
 import { calculateAstro } from './astro.js';
 import { analyzeName, isKoreanName } from './name.js';
+import { lunarToSolar } from './lunar.js';
 import {
   ELEMENT_INFO, DAY_MASTERS, TEN_GOD_GROUP_INFO, TEN_GOD_INFO, STAGE_INFO, STRENGTH_INFO, SINSAL_INFO,
   YEAR_BRANCH_INFO, COMPAT_STEM, COMPAT_DAY, COMPAT_GRADE,
 } from './data-saju.js';
 import { SIGNS, ASTRO_ELEMENTS } from './data-astro.js';
 import { SURI, LUCK_LABEL, FLOW_INFO } from './data-name.js';
+import { CLASSICS, SEASON_NOTES, seasonOf, ANIMAL_NOTES, ORGAN_NOTES, psychNote, ABOUT } from './data-notes.js';
 import { icon, medallion, heroScene, cardBack, standaloneMedallion, standaloneHero } from './art.js';
+import { rabbit, guide } from './mascot.js';
+import { sajuDocument, reportDocument, ageOf } from './doc.js';
+
+const BRAND = '달빛보살';
 
 // ───────── 저장소 ─────────
 const STORE_KEY = 'maeum:v2';
@@ -19,7 +25,6 @@ function load() {
   try {
     const cur = JSON.parse(localStorage.getItem(STORE_KEY));
     if (cur) return cur;
-    // v1 → v2: 입력값만 옮긴다 (계산 결과는 매번 다시 구한다)
     const old = JSON.parse(localStorage.getItem('maeum:v1')) ?? {};
     return { me: old.saju?.input ?? null, stress: old.stress ?? null, card: old.card ?? null };
   } catch { return {}; }
@@ -32,6 +37,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const today = () => new Date().toLocaleDateString('sv-SE'); // YYYY-MM-DD (로컬)
 const EL = (i) => ELEMENT_INFO[i];
 const siteUrl = () => location.href.split('#')[0];
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // 입력값 → 사주·별자리·이름 풀이 (입력이 같으면 다시 계산하지 않는다)
 const cache = new Map();
@@ -49,12 +55,12 @@ function reading(input) {
 const me = () => reading(store.me);
 const callName = (input) => (input?.name ? `${esc(input.name)}님` : '당신');
 
-function toast(msg) {
+function toast(msg, ms = 2400) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => el.classList.remove('show'), 2400);
+  toast.t = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 async function share(title, text, url = siteUrl()) {
@@ -71,31 +77,125 @@ async function share(title, text, url = siteUrl()) {
 }
 
 // ───────── 라우터 ─────────
-const routes = { '': renderHome, saju: renderSajuForm, me: renderMe, match: renderMatch, test: renderTest, result: renderResult, card: renderCard, report: renderReport };
+const routes = {
+  '': renderHome, saju: renderSajuForm, me: renderMe, match: renderMatch, rest: renderRest, test: renderTest,
+  result: renderResult, card: renderCard, breathe: renderBreathe, report: renderReport, about: renderAbout,
+};
+// 하단 메뉴에서 어느 탭을 켤지
+const NAV_GROUP = { '': 'home', saju: 'me', me: 'me', match: 'match', rest: 'rest', test: 'rest', result: 'rest', card: 'rest', breathe: 'rest', report: 'rest', about: 'home' };
 let query = new URLSearchParams();
 let firstRender = true;
+let cleanup = null; // 화면을 떠날 때 정리할 타이머 등
 
 function navigate() {
   const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
   query = new URLSearchParams(qs ?? '');
-  const view = routes[path] ?? renderHome;
+  const route = routes[path] ? path : '';
+  const view = routes[route];
   const update = () => {
+    cleanup?.();
+    cleanup = null;
     app.innerHTML = view();
     view.mount?.();
     window.scrollTo(0, 0);
     app.focus({ preventScroll: true });
+    document.getElementById('back-btn').hidden = route === '';
+    document.querySelectorAll('.tabbar a').forEach((a) => {
+      if (a.dataset.nav === NAV_GROUP[route]) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    reveal();
   };
-  if (!firstRender && document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    document.startViewTransition(update);
-  } else {
-    update();
-  }
+  if (!firstRender && document.startViewTransition && !reducedMotion()) document.startViewTransition(update);
+  else update();
   firstRender = false;
 }
 window.addEventListener('hashchange', navigate);
 
-const emptyState = (msg, href, label) => `<section class="panel center"><p>${msg}</p><a class="btn btn-primary" href="${href}">${label}</a></section>`;
+// 스크롤하면 패널이 부드럽게 떠오른다
+const revealer = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    e.target.classList.add('in');
+    revealer.unobserve(e.target);
+  }
+}, { rootMargin: '0px 0px -6% 0px' }) : null;
+function reveal(root = app) {
+  if (!revealer || reducedMotion()) return;
+  root.querySelectorAll('.panel, .tile-card, .profile, .psych, .guide').forEach((el, i) => {
+    if (el.classList.contains('reveal')) return;
+    el.classList.add('reveal');
+    el.style.transitionDelay = `${Math.min(i, 5) * 50}ms`;
+    revealer.observe(el);
+  });
+}
+
+const emptyState = (msg, href, label) => `${guide(msg)}<div class="actions"><a class="btn btn-primary" href="${href}">${label}</a></div>`;
 const sectionTitle = (name, text) => `<h2 class="h-sec">${icon(name, 22)}<span>${text}</span></h2>`;
+
+// ───────── 생년월일 입력 (양력·음력) ─────────
+const opt = (v, label, sel) => `<option value="${v}" ${String(sel ?? '') === String(v) ? 'selected' : ''}>${label}</option>`;
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+function birthFields(prev = {}) {
+  let { y, m, d } = prev;
+  if (!y && prev.date) [y, m, d] = prev.date.split('-').map(Number);
+  const cal = prev.cal ?? 'solar';
+  const [hh, mm] = prev.time ? prev.time.split(':').map(Number) : [null, 0];
+  const hourSel = prev.unknownTime ? 'x' : hh ?? '';
+  const thisYear = new Date().getFullYear();
+  return `
+  <fieldset class="field">
+    <legend>생년월일</legend>
+    <div class="seg seg-3">
+      ${[['solar', '양력'], ['lunar', '음력'], ['leap', '음력 윤달']].map(([v, l]) => `<label><input type="radio" name="cal" value="${v}" ${cal === v ? 'checked' : ''}><span>${l}</span></label>`).join('')}
+    </div>
+    <div class="date-row">
+      <select name="y" aria-label="태어난 해">${opt('', '년', y)}${range(1920, thisYear).reverse().map((v) => opt(v, `${v}년`, y)).join('')}</select>
+      <select name="m" aria-label="태어난 달">${opt('', '월', m)}${range(1, 12).map((v) => opt(v, `${v}월`, m)).join('')}</select>
+      <select name="d" aria-label="태어난 날">${opt('', '일', d)}${range(1, 31).map((v) => opt(v, `${v}일`, d)).join('')}</select>
+    </div>
+    <small class="error" data-err="date" hidden></small>
+  </fieldset>
+  <fieldset class="field">
+    <legend>태어난 시간</legend>
+    <div class="date-row time-row">
+      <select name="hh" aria-label="태어난 시">${opt('', '시 선택', hourSel)}${opt('x', '모름', hourSel)}${range(0, 23).map((v) => opt(v, `${v}시 (${BRANCHES_KO[Math.floor(((v + 1) % 24) / 2)]}시)`, hourSel)).join('')}</select>
+      <select name="mm" aria-label="태어난 분" ${hourSel === 'x' || hourSel === '' ? 'disabled' : ''}>${range(0, 59).map((v) => opt(v, `${v}분`, mm)).join('')}</select>
+    </div>
+    <small class="hint">시간을 모르면 “모름”을 골라 주세요. 시주를 뺀 여섯 글자로 풀이해요.</small>
+    <small class="error" data-err="time" hidden></small>
+  </fieldset>`;
+}
+function wireBirth(form) {
+  form.elements.hh.addEventListener('change', (e) => { form.elements.mm.disabled = e.target.value === 'x' || e.target.value === ''; });
+}
+function readBirth(form, { requireTime = true } = {}) {
+  const f = form.elements;
+  const err = (key, msg) => { const el = form.querySelector(`[data-err=${key}]`); el.textContent = msg ?? ''; el.hidden = !msg; };
+  err('date'); err('time');
+  const [y, m, d] = [f.y.value, f.m.value, f.d.value].map(Number);
+  const cal = f.cal.value;
+  if (!y || !m || !d) { err('date', '태어난 해, 달, 날을 모두 골라 주세요.'); f[!y ? 'y' : !m ? 'm' : 'd'].focus(); return null; }
+  let date;
+  if (cal === 'solar') {
+    const t = new Date(y, m - 1, d);
+    if (t.getMonth() !== m - 1) { err('date', `${m}월에는 ${d}일이 없어요.`); f.d.focus(); return null; }
+    date = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  } else {
+    date = lunarToSolar(y, m, d, cal === 'leap');
+    if (!date) { err('date', cal === 'leap' ? `${y}년 음력 ${m}월에는 윤달이 없거나, 그런 날짜가 없어요.` : `${y}년 음력 ${m}월에는 ${d}일이 없어요.`); f.d.focus(); return null; }
+  }
+  if (date > today()) { err('date', '아직 오지 않은 날짜예요.'); f.y.focus(); return null; }
+  const unknownTime = f.hh.value === 'x' || (!requireTime && f.hh.value === '');
+  if (!unknownTime && f.hh.value === '') { err('time', '태어난 시간을 고르거나 “모름”을 선택해 주세요.'); f.hh.focus(); return null; }
+  const time = unknownTime ? '' : `${String(f.hh.value).padStart(2, '0')}:${String(f.mm.value).padStart(2, '0')}`;
+  return { cal, y, m, d, date, time, unknownTime };
+}
+const birthLabel = (input) => {
+  const [y, m, d] = input.date.split('-').map(Number);
+  const lunar = input.cal && input.cal !== 'solar' ? ` (음력 ${input.cal === 'leap' ? '윤' : ''}${input.m}월 ${input.d}일)` : '';
+  return `양력 ${y}년 ${m}월 ${d}일${lunar} · ${input.unknownTime ? '시간 모름' : input.time}`;
+};
 
 // ───────── 홈 ─────────
 function todayFortune(r) {
@@ -106,6 +206,10 @@ function todayFortune(r) {
   const extra = { 충: '변화와 이동이 많은 하루예요. 서두르지 말고 여유를 두세요.', 육합: '반가운 인연과 소식이 닿기 쉬운 하루예요.', 삼합: '사람들과 힘을 모으기 좋은 하루예요.' }[rel] ?? '';
   return { p, g, info: TEN_GOD_INFO[g], extra, good: p.stemElement === r.strength.yongElement || p.branchElement === r.strength.yongElement };
 }
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? '고요한 밤이에요' : h < 11 ? '좋은 아침이에요' : h < 17 ? '좋은 오후예요' : h < 22 ? '편안한 저녁이에요' : '고요한 밤이에요';
+}
 
 function renderHome() {
   const m = me();
@@ -114,9 +218,11 @@ function renderHome() {
   const nextYear = currentSajuYear(now) + 1;
   const ny = yearPillarOf(nextYear);
   let top;
+  let hello;
   if (m) {
     const dm = DAY_MASTERS[m.r.dayMaster];
     const t = todayFortune(m.r);
+    hello = `${greeting()}, ${callName(m.input)}. 오늘은 <strong>${t.p.hanja}일</strong>, ${t.info.name}의 기운이 들어오는 날이에요.`;
     top = `
     <a class="profile" href="#/me" style="--el:${EL(m.r.dayMasterElement).color}">
       ${medallion(dm.art, EL(m.r.dayMasterElement).color, [], 76)}
@@ -134,35 +240,38 @@ function renderHome() {
       <p class="muted small">키워드 · ${t.info.keyword}</p>
     </section>`;
   } else {
+    hello = `${greeting()}. 저는 ${BRAND}의 달토끼 <strong>보리</strong>예요. 생년월일을 알려 주시면 타고난 여덟 글자를 풀어 드릴게요.`;
     top = `<a class="btn btn-primary btn-lg" href="#/saju">내 사주 풀이 보기</a>
-    <p class="muted small center">생년월일만 입력하면 1분 안에 결과가 나와요.</p>`;
+    <p class="muted small center">양력·음력 모두 돼요. 1분이면 충분해요.</p>`;
   }
   const tile = (href, art, title, sub) => `<a class="tile-card" href="${href}">${icon(art, 30)}<strong>${title}</strong><span>${sub}</span></a>`;
   return `
   <section class="hero">
     ${heroScene()}
     <div class="hero-copy">
-      <p class="eyebrow">正統 四柱命理 · 사주 · 별자리 · 이름</p>
+      <p class="eyebrow">正統 四柱命理 · 사주 · 궁합 · 신년운세</p>
       <h1>태어난 순간에 새겨진<br><em>당신의 이야기</em></h1>
       <p class="lead">절기와 진태양시까지 계산하는 정통 사주 풀이.<br>타고난 기질부터 ${nextYear}년의 흐름까지 읽어 드려요.</p>
     </div>
   </section>
+  ${guide(hello, { mood: 'happy' })}
   <div class="home-top">${top}</div>
 
-  <nav class="tiles" aria-label="메뉴">
+  <nav class="tiles" aria-label="바로 가기">
     ${tile(m ? '#/me' : '#/saju', 'palja', '사주 풀이', '원국 · 성격 · 대운')}
     ${tile(m ? '#/me?tab=flow' : '#/saju', 'sunrise', `${nextYear} 신년운세`, `${ny.hanja}년 · 월별 흐름`)}
     ${tile('#/match', 'hearts', '궁합 보기', '연인 · 친구 · 가족')}
     ${tile(m ? '#/me?tab=name' : '#/saju', 'brush', '이름 풀이', '수리 · 발음오행')}
-    ${tile('#/test', 'pulse', '마음 테스트', '스트레스 유형 15문항')}
+    ${tile('#/rest', 'pulse', '마음 쉼터', '테스트 · 숨 고르기')}
     ${tile('#/card', 'cards', '오늘의 위로 카드', '하루 한 장')}
   </nav>
 
   <ul class="trust">
     <li>${icon('sun', 20)}<span><strong>절기 · 진태양시 계산</strong>입춘과 12절기를 천문 계산으로 구해 연·월주를 정확히 세워요.</span></li>
-    <li>${icon('moonstar', 20)}<span><strong>사주 + 점성학 + 성명학</strong>동서양의 세 가지 관점으로 나를 입체적으로 읽어요.</span></li>
+    <li>${icon('scroll', 20)}<span><strong>고전과 연구에 근거한 풀이</strong>『적천수』·『궁통보감』 같은 명리 고전과 심리학 연구를 함께 담았어요.</span></li>
     <li>${icon('lock', 20)}<span><strong>내 기기에만 저장</strong>입력한 생년월일은 서버로 보내지 않아요.</span></li>
-  </ul>`;
+  </ul>
+  <a class="btn btn-ghost" href="#/about">풀이의 근거 자세히 보기</a>`;
 }
 
 // ───────── 사주 입력 ─────────
@@ -170,36 +279,21 @@ function renderSajuForm() {
   const prev = store.me ?? {};
   const invite = store.invite;
   return `
-  <section class="page-head">
-    <p class="eyebrow">四柱八字</p>
-    <h1>사주 정보 입력</h1>
-    <p class="lead">${invite ? `${esc(invite.name || '친구')}님과의 궁합을 보려면 내 정보를 먼저 알려 주세요.` : '태어난 날과 시간을 알려 주세요.'}</p>
-  </section>
+  ${guide(invite ? `<strong>${esc(invite.name) || '친구'}</strong>님과의 궁합을 보려면 내 생일을 먼저 알려 주세요.` : '태어난 날과 시간을 알려 주세요. 음력 생일도 괜찮아요.')}
   <form class="panel form" id="saju-form" novalidate>
     <label class="field">
-      <span>이름 <small>(선택 · 한글 실명을 넣으면 이름 풀이도 함께 봐요)</small></span>
+      <span>이름 <small>(선택 · 한글 실명이면 이름 풀이도 함께 봐요)</small></span>
       <input name="name" maxlength="10" autocomplete="name" value="${esc(prev.name)}" placeholder="예: 김지은">
     </label>
     <fieldset class="field">
-      <legend>성별 <small>(대운의 방향을 정하는 데 필요해요)</small></legend>
+      <legend>성별 <small>(대운의 방향을 정할 때 필요해요)</small></legend>
       <div class="seg">
         <label><input type="radio" name="gender" value="f" ${prev.gender === 'f' ? 'checked' : ''}><span>여성</span></label>
         <label><input type="radio" name="gender" value="m" ${prev.gender === 'm' ? 'checked' : ''}><span>남성</span></label>
       </div>
-      <small class="error" id="gender-error" hidden>성별을 선택해 주세요.</small>
+      <small class="error" data-err="gender" hidden>성별을 선택해 주세요.</small>
     </fieldset>
-    <label class="field">
-      <span>생년월일 <small>(양력)</small></span>
-      <input name="date" type="date" required min="1920-01-01" max="${today()}" value="${esc(prev.date)}">
-      <small class="hint">음력 생일만 안다면 포털의 “음력 양력 변환”으로 바꿔서 입력해 주세요.</small>
-      <small class="error" id="date-error" hidden>생년월일을 입력해 주세요.</small>
-    </label>
-    <div class="field">
-      <label for="time">태어난 시간</label>
-      <input id="time" name="time" type="time" value="${esc(prev.time ?? '')}" ${prev.unknownTime ? 'disabled' : ''}>
-      <label class="check"><input type="checkbox" name="unknownTime" ${prev.unknownTime ? 'checked' : ''}> 시간을 몰라요</label>
-      <small class="error" id="time-error" hidden>태어난 시간을 입력하거나 “시간을 몰라요”를 선택해 주세요.</small>
-    </div>
+    ${birthFields(prev)}
     <details class="field">
       <summary>고급 설정</summary>
       <label class="check"><input type="checkbox" name="correction" ${prev.correction === false ? '' : 'checked'}> 진태양시 보정 (서울 기준 약 −30분)</label>
@@ -211,31 +305,42 @@ function renderSajuForm() {
 renderSajuForm.mount = () => {
   const form = app.querySelector('#saju-form');
   const f = form.elements;
-  f.unknownTime.addEventListener('change', () => { f.time.disabled = f.unknownTime.checked; });
+  wireBirth(form);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const ok = { gender: !!f.gender.value, date: !!f.date.value, time: f.unknownTime.checked || !!f.time.value };
-    for (const [k, v] of Object.entries(ok)) form.querySelector(`#${k}-error`).hidden = v;
-    if (!ok.gender) { form.querySelector('input[name=gender]').focus(); return; }
-    if (!ok.date) { f.date.focus(); return; }
-    if (!ok.time) { f.time.focus(); return; }
-    store.me = {
-      name: f.name.value.trim(), gender: f.gender.value, date: f.date.value,
-      time: f.time.value, unknownTime: f.unknownTime.checked, correction: f.correction.checked,
-    };
+    const genderErr = form.querySelector('[data-err=gender]');
+    genderErr.hidden = !!f.gender.value;
+    if (!f.gender.value) { form.querySelector('input[name=gender]').focus(); return; }
+    const birth = readBirth(form);
+    if (!birth) return;
+    store.me = { name: f.name.value.trim(), gender: f.gender.value, correction: f.correction.checked, ...birth };
     save();
-    location.hash = store.invite ? '#/match' : '#/me';
+    ritual(store.invite ? '#/match' : '#/me');
   });
 };
 
+// 풀이를 준비하는 짧은 의식: 기다림이 곧 경험이 되도록
+function ritual(next) {
+  const steps = ['만세력을 펼치고 있어요', '여덟 글자를 세우고 있어요', '오행의 균형을 살피고 있어요', '대운의 흐름을 읽고 있어요'];
+  const stepMs = reducedMotion() ? 150 : 650;
+  app.innerHTML = `<section class="ritual" role="status" aria-live="polite">
+    <div class="ritual-ring">${medallion('moonstar', '#d4b26a', [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 220)}</div>
+    ${rabbit(84, 'happy')}
+    <p class="ritual-step" id="ritual-step">${steps[0]}</p>
+  </section>`;
+  window.scrollTo(0, 0);
+  let i = 0;
+  const timer = setInterval(() => {
+    i += 1;
+    if (i < steps.length) { document.getElementById('ritual-step').textContent = steps[i]; return; }
+    clearInterval(timer);
+    location.hash = next;
+  }, stepMs);
+  cleanup = () => clearInterval(timer);
+}
+
 // ───────── 내 사주 ─────────
 const TABS = [['base', '원국'], ['self', '성격'], ['flow', '운세'], ['astro', '별자리'], ['name', '이름']];
-
-function ageOf(input) {
-  const [y, m, d] = input.date.split('-').map(Number);
-  const n = new Date();
-  return n.getFullYear() - y - (n.getMonth() + 1 < m || (n.getMonth() + 1 === m && n.getDate() < d) ? 1 : 0);
-}
 
 function pillarColumn(label, p, d) {
   if (!p) {
@@ -257,14 +362,18 @@ function pillarColumn(label, p, d) {
 function tabBase({ input, r }) {
   const dm = DAY_MASTERS[r.dayMaster];
   const p = r.pillars;
+  const el = EL(r.dayMasterElement);
   const total = r.counts.reduce((a, b) => a + b, 0);
   const max = Math.max(...r.counts);
   const lacking = r.counts.flatMap((c, i) => (c === 0 ? [i] : []));
   const excess = r.counts.flatMap((c, i) => (c >= 3 && c === max ? [i] : []));
+  const weakest = r.counts.indexOf(Math.min(...r.counts));
   const st = r.strength;
   const yong = EL(st.yongElement);
   const hee = EL(st.heeElement);
+  const season = seasonOf(p.month.branch);
   return `
+  ${guide(`${callName(input)}의 여덟 글자를 펼쳐 봤어요. 가운데 <strong>일간 ${dm.stem}</strong>이 바로 ${callName(input)} 자신이에요.`)}
   <section class="panel quote-panel">
     <p class="eyebrow">남들은 잘 모르는 ${callName(input)}</p>
     <blockquote>${dm.inner}</blockquote>
@@ -278,7 +387,14 @@ function tabBase({ input, r }) {
       ${pillarColumn('월주', p.month, r.detail.month)}
       ${pillarColumn('연주', p.year, r.detail.year)}
     </div>
-    <p class="muted small">글자 위아래는 십성(十星), 그 아래는 지장간(支藏干)과 12운성이에요. 가운데 <strong>일간 ${dm.stem}</strong>이 바로 ${callName(input)} 자신을 뜻해요.</p>
+    <p class="muted small">글자 위아래는 십성(十星), 그 아래는 지장간(支藏干)과 12운성이에요.</p>
+    <p class="muted small">${birthLabel(input)}</p>
+  </section>
+
+  <section class="panel">
+    ${sectionTitle('sunrise', `태어난 계절 · ${season}의 ${el.name}`)}
+    <p>${SEASON_NOTES[r.dayMasterElement][season]}</p>
+    <p class="muted small">계절의 춥고 더움을 맞추는 조후(調候)의 관점이에요. 『궁통보감』이 이 이론의 대표적인 고전이에요.</p>
   </section>
 
   <section class="panel">
@@ -294,6 +410,9 @@ function tabBase({ input, r }) {
     ${lacking.map((i) => `<div class="callout" style="--accent:${EL(i).color}"><strong>${EL(i).hanja}(${EL(i).name})의 기운이 없어요</strong><p>${EL(i).lack}</p></div>`).join('')}
     ${excess.map((i) => `<div class="callout" style="--accent:${EL(i).color}"><strong>${EL(i).hanja}(${EL(i).name})의 기운이 강해요</strong><p>${EL(i).excess}</p></div>`).join('')}
     ${!lacking.length && !excess.length ? '<p>다섯 가지 기운이 고르게 분포되어 있어요. 어느 한쪽에 치우치지 않아 상황에 따라 유연하게 대처하는 힘이 있어요.</p>' : ''}
+    <h3 class="h-sub">오행과 몸</h3>
+    <p>한의학에서는 ${EL(weakest).hanja}(${EL(weakest).name})을 <strong>${ORGAN_NOTES[weakest].organs}</strong>와 이어진 기운으로 봐요. 가장 약한 기운인 만큼, ${ORGAN_NOTES[weakest].tip}</p>
+    <p class="muted small">전통 의학의 관점을 소개한 것으로, 의학적 진단이 아니에요.</p>
   </section>
 
   <section class="panel">
@@ -321,17 +440,26 @@ function tabBase({ input, r }) {
     <ul class="sinsal">
       ${r.sinsal.map((k) => `<li><strong>${k} <small>${SINSAL_INFO[k].hanja}</small></strong><em>${SINSAL_INFO[k].title}</em><p>${SINSAL_INFO[k].desc}</p></li>`).join('')}
     </ul>
+    <p class="muted small">신살은 명나라의 『삼명통회』에 집대성되어 있어요.</p>
   </section>` : ''}
-  <p class="muted small center">${r.timeKnown ? '' : '태어난 시간을 모르면 시주를 뺀 여섯 글자로 풀이해요. '}신강·신약과 용신은 학파에 따라 판단이 다를 수 있어요.</p>`;
+  <p class="muted small center">${r.timeKnown ? '' : '태어난 시간을 모르면 시주를 뺀 여섯 글자로 풀이해요. '}신강·신약과 용신은 학파에 따라 판단이 다를 수 있어요. <a href="#/about">풀이의 근거</a></p>`;
 }
 
 function tabSelf({ input, r }) {
   const dm = DAY_MASTERS[r.dayMaster];
+  const classic = CLASSICS[r.dayMaster];
   const seat = TEN_GOD_INFO[r.detail.day.branchGod];
   const stage = STAGE_INFO[r.detail.day.stage];
   const topGroup = r.tenGodCounts.indexOf(Math.max(...r.tenGodCounts));
   const g = TEN_GOD_GROUP_INFO[topGroup];
   return `
+  ${guide(`삼백 년 넘게 읽혀 온 고전 『적천수』는 ${dm.stem}의 사람을 이렇게 노래했어요.`)}
+  <section class="panel quote-panel classic">
+    <p class="eyebrow">고전의 한 줄 · 『적천수(滴天髓)』</p>
+    <p class="classic-text" lang="zh-Hant">${classic.text}</p>
+    <blockquote>${classic.ko}</blockquote>
+    <p class="muted">${classic.note}</p>
+  </section>
   <section class="panel">
     ${sectionTitle(dm.art, '타고난 기질')}
     <p>${dm.personality}</p>
@@ -342,31 +470,26 @@ function tabSelf({ input, r }) {
     ${sectionTitle('moonstar', `${r.pillars.day.hangul}일주의 속마음`)}
     <h3 class="h-sub">에너지의 결 · ${stage.name}(${stage.hanja})</h3><p>${stage.desc}</p>
     <h3 class="h-sub">가까운 관계에서의 나 · 일지 ${seat.name}</h3><p>${seat.seat}</p>
+    <h3 class="h-sub">${r.animal}띠의 기질</h3><p>${ANIMAL_NOTES[r.pillars.year.branch]}</p>
   </section>
   <section class="panel">
     ${sectionTitle('star', `나를 이끄는 힘 · ${g.name}`)}
     <h3 class="h-sub">${g.title}</h3><p>${g.desc}</p>
     <div class="god-chips">${r.tenGodCounts.map((c, i) => `<span class="${i === topGroup ? 'on' : ''}">${TEN_GOD_GROUP[i]} ${c}</span>`).join('')}</div>
   </section>
-  <section class="panel">
-    ${sectionTitle('hearts', '사랑할 때')}
-    <p>${dm.love}</p>
-  </section>
-  <section class="panel">
-    ${sectionTitle('brush', '일과 적성')}
-    <p>${dm.work}</p>
-  </section>
+  <section class="panel">${sectionTitle('hearts', '사랑할 때')}<p>${dm.love}</p></section>
+  <section class="panel">${sectionTitle('brush', '일과 적성')}<p>${dm.work}</p></section>
   <section class="panel">
     ${sectionTitle('pulse', '지칠 때 나를 돌보는 법')}
     <p>${dm.stressStyle}</p><p>${dm.healing}</p>
-    <a class="btn" href="#/test">${store.stress ? '마음 테스트 결과 다시 보기' : '지금 내 스트레스 유형 알아보기'}</a>
+    ${psychNote('nature')}
+    <a class="btn" href="#/rest">마음 쉼터로 가기</a>
   </section>`;
 }
 
 function yearCard(sajuYear, { input, r }, label) {
   const p = yearPillarOf(sajuYear);
-  const g = tenGod(r.dayMaster, p.stem);
-  const info = TEN_GOD_INFO[g];
+  const info = TEN_GOD_INFO[tenGod(r.dayMaster, p.stem)];
   const rel = branchRelation(r.pillars.day.branch, p.branch);
   const yong = r.strength.yongElement;
   const good = p.stemElement === yong || p.branchElement === yong;
@@ -399,13 +522,15 @@ function tabFlow(m) {
   const { input, r } = m;
   const now = new Date();
   const thisYear = currentSajuYear(now);
-  const lateYear = now.getMonth() >= 9 || thisYear < now.getFullYear(); // 10월~입춘 전: 신년운세가 먼저
+  const lateYear = now.getMonth() >= 9 || thisYear < now.getFullYear(); // 10월~입춘 전에는 신년운세가 먼저
   const lucky = EL(r.strength.yongElement);
   let daeun;
+  let hello = '10년마다 바뀌는 큰 흐름인 대운부터, 해마다의 운세까지 차례로 볼게요.';
   if (r.daeun) {
     const age = ageOf(input);
     const idx = r.daeun.list.findLastIndex((d) => age >= d.age);
     const cur = r.daeun.list[idx];
+    if (cur) hello = `지금 ${callName(input)}은 <strong>${cur.hanja} 대운</strong>, ${TEN_GODS[cur.stemGod]}의 10년을 지나고 있어요.`;
     daeun = `
     <div class="daeun" tabindex="0" aria-label="대운 흐름">
       ${r.daeun.list.map((d, i) => `<div class="du ${i === idx ? 'is-now' : ''}" style="--el:${EL(d.stemElement).color};--el2:${EL(d.branchElement).color}">
@@ -415,7 +540,7 @@ function tabFlow(m) {
       <p><strong>${TEN_GODS[cur.stemGod]}의 10년.</strong> ${TEN_GOD_INFO[cur.stemGod].daeun}</p>
       <p class="muted">후반 5년은 지지 ${cur.hanja[1]}의 영향으로 <strong>${TEN_GODS[cur.branchGod]}</strong>(${TEN_GOD_INFO[cur.branchGod].keyword})의 기운이 강해지고, 에너지는 <strong>${TWELVE_STAGES[cur.stage]}</strong>의 흐름을 타요.</p>`
     : `<p>아직 첫 대운이 시작되기 전이에요. ${r.daeun.startAge}세부터 첫 대운이 열려요.</p>`}
-    <p class="muted small">대운수 ${r.daeun.startAge} · ${r.daeun.forward ? '순행' : '역행'}. 나이는 만 나이 기준이에요.</p>`;
+    <p class="muted small">대운수 ${r.daeun.startAge} · ${r.daeun.forward ? '순행' : '역행'}. 나이는 만 나이 기준이에요. 좌우로 밀어서 볼 수 있어요.</p>`;
   } else {
     daeun = `<p>대운은 성별에 따라 흐르는 방향이 달라져요. 성별을 입력하면 10년 단위의 큰 흐름을 볼 수 있어요.</p><a class="btn" href="#/saju">성별 입력하기</a>`;
   }
@@ -424,6 +549,7 @@ function tabFlow(m) {
     : yearCard(thisYear, m, '올해의 운세') + yearCard(thisYear + 1, m, '미리 보는 내년');
   const monthYear = lateYear ? thisYear + 1 : thisYear;
   return `
+  ${guide(hello)}
   <section class="panel">
     ${sectionTitle('mountain', '대운(大運) · 10년의 큰 흐름')}
     ${daeun}
@@ -445,7 +571,8 @@ function tabFlow(m) {
       <div class="wide"><dt>가까이 두면 좋은 것</dt><dd>${lucky.items}</dd></div>
       <div class="wide"><dt>도움이 되는 음식</dt><dd>${lucky.foods}</dd></div>
     </dl>
-  </section>`;
+  </section>
+  ${psychNote('fortune')}`;
 }
 
 function tabAstro({ input, astro }) {
@@ -458,6 +585,7 @@ function tabAstro({ input, astro }) {
       <div><p class="eyebrow">${role} · ${sub}</p><h3>${s.name} <small>${ASTRO_ELEMENTS[s.element]}의 별자리</small></h3><p>${text}</p></div>
     </section>`;
   return `
+  ${guide('이번에는 서양의 하늘로 볼게요. 태어난 순간 해와 달이 어느 별자리에 있었는지 계산했어요.')}
   <section class="panel">
     ${sectionTitle('moonstar', '별자리로 보는 나 · 빅3')}
     <p>서양 점성학에서는 태어난 순간 <strong>태양·달·동쪽 지평선</strong>이 어느 별자리에 있었는지로 사람을 읽어요. ${callName(input)}은
@@ -475,19 +603,16 @@ function tabAstro({ input, astro }) {
 
 function tabName({ input, r, name }) {
   if (!name) {
-    return `<section class="panel center">
-      ${icon('brush', 44, 'gold')}
-      <h2 class="h-sec center-title">이름 풀이</h2>
-      <p>한글 이름(성 포함 2~4자)을 입력하면 획수 수리와 발음오행으로 이름의 기운을 풀어 드려요.</p>
-      ${input.name && !isKoreanName(input.name) ? '<p class="muted small">지금 입력된 이름은 한글 실명 형식이 아니에요.</p>' : ''}
-      <a class="btn btn-primary" href="#/saju">이름 입력하기</a>
-    </section>`;
+    return `${guide('한글 이름(성 포함 2~4자)을 알려 주시면 소리와 획수에 담긴 기운을 풀어 드릴게요.')}
+    ${input.name && !isKoreanName(input.name) ? '<p class="muted small center">지금 입력된 이름은 한글 실명 형식이 아니에요.</p>' : ''}
+    <div class="actions"><a class="btn btn-primary" href="#/saju">이름 입력하기</a></div>`;
   }
   const yong = EL(r.strength.yongElement);
   const hasYong = name.elements.includes(r.strength.yongElement);
   const goodCount = name.grids.filter((g) => SURI[g.number][1] === 1).length;
   const flowKinds = [...new Set(name.flow)];
   return `
+  ${guide(`<strong>${esc(input.name)}</strong>, 이 이름에 담긴 소리와 숫자의 기운을 볼게요.`)}
   <section class="panel">
     ${sectionTitle('brush', '이름의 소리 · 발음오행')}
     <div class="name-chars">
@@ -499,6 +624,7 @@ function tabName({ input, r, name }) {
       <p>${hasYong
     ? `이름의 소리에 용신인 ${yong.hanja}(${yong.name})의 기운이 들어 있어요. 사주에 필요한 부분을 이름이 채워 주고 있어요.`
     : `이름의 소리에는 용신인 ${yong.hanja}(${yong.name})의 기운이 없어요. 별명이나 닉네임, 자주 쓰는 색과 소품으로 보완해 보세요.`}</p></div>
+    <p class="muted small">자음의 오행은 통용되는 방식(ㄱㅋ 木, ㄴㄷㄹㅌ 火, ㅇㅎ 土, ㅅㅈㅊ 金, ㅁㅂㅍ 水)을 따랐어요. 『훈민정음 해례본』은 ㅁㅂㅍ을 土, ㅇㅎ을 水로 보아 차이가 있어요.</p>
   </section>
   <section class="panel">
     ${sectionTitle('scroll', '이름의 수리 · 원형이정(元亨利貞)')}
@@ -509,8 +635,9 @@ function tabName({ input, r, name }) {
     return `<li class="luck-${luck}"><span class="g-num">${g.number}</span><div><strong>${g.key} · ${title} <em>${LUCK_LABEL[luck]}</em></strong><small>${g.period}</small><p>${desc}</p></div></li>`;
   }).join('')}
     </ul>
-    <p class="muted small">한글 획수 기준의 풀이예요. 정통 성명학은 한자 획수와 뜻을 함께 보기 때문에 결과가 다를 수 있어요.</p>
-  </section>`;
+    <p class="muted small">한글 획수 기준의 참고용 풀이예요. 81수리는 20세기 초 일본에서 체계화된 방식으로, 정통 성명학은 한자의 획수와 뜻을 함께 봐요. <a href="#/about">자세히</a></p>
+  </section>
+  ${psychNote('name')}`;
 }
 
 const TAB_VIEWS = { base: tabBase, self: tabSelf, flow: tabFlow, astro: tabAstro, name: tabName };
@@ -518,7 +645,7 @@ let activeTab = 'base';
 
 function renderMe() {
   const m = me();
-  if (!m) return emptyState('아직 입력한 사주 정보가 없어요.', '#/saju', '사주 입력하기');
+  if (!m) return emptyState('아직 생년월일을 알려 주지 않으셨어요. 입력하면 바로 풀어 드릴게요.', '#/saju', '사주 입력하기');
   if (TAB_VIEWS[query.get('tab')]) activeTab = query.get('tab');
   const { input, r, astro } = m;
   const dm = DAY_MASTERS[r.dayMaster];
@@ -527,7 +654,7 @@ function renderMe() {
   return `
   <section class="result-hero" style="--el:${el.color}">
     <p class="eyebrow">${callName(input)}의 일주 · ${r.pillars.day.hanja}(${r.pillars.day.hangul})</p>
-    ${medallion(dm.art, el.color, branches)}
+    <div class="medal-3d">${medallion(dm.art, el.color, branches)}</div>
     <h1>${dm.title}</h1>
     <p class="tagline">${STEMS_KO[r.dayMaster]}${el.ko}(${dm.stem}${el.hanja}) · ${r.yinYang}의 ${el.name} · ${r.animal}띠 · ${SIGNS[astro.sun].name}</p>
     <p class="chips">${dm.keywords.map((k) => `<span>#${k}</span>`).join('')}</p>
@@ -537,7 +664,8 @@ function renderMe() {
   </div>
   <div id="tab-body" role="tabpanel" aria-labelledby="tab-${activeTab}">${TAB_VIEWS[activeTab](m)}</div>
   <div class="actions">
-    <button type="button" class="btn btn-primary" id="save-card">${icon('download', 20)}결과 카드 저장 · 공유</button>
+    <button type="button" class="btn btn-primary" id="save-pdf">${icon('download', 20)}풀이 전체를 PDF로 저장</button>
+    <button type="button" class="btn" id="save-card">${icon('star', 20)}결과 카드 이미지 저장 · 공유</button>
     <a class="btn" href="#/match">${icon('hearts', 20)}친구 · 연인과 궁합 보기</a>
     <button type="button" class="btn btn-ghost" id="share">${icon('share', 18)}친구에게 알려 주기</button>
     <a class="btn btn-ghost" href="#/saju">정보 다시 입력하기</a>
@@ -556,14 +684,34 @@ renderMe.mount = () => {
     const body = app.querySelector('#tab-body');
     body.setAttribute('aria-labelledby', btn.id);
     body.innerHTML = TAB_VIEWS[activeTab](m);
+    reveal(body);
     btn.scrollIntoView({ block: 'nearest', inline: 'center' });
     if (tabs.getBoundingClientRect().top <= 1) window.scrollTo({ top: body.offsetTop - tabs.offsetHeight - 8 });
   });
   app.querySelector('.tabs [aria-selected=true]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
-  app.querySelector('#share').addEventListener('click', () => share('마음결 사주 풀이',
+  app.querySelector('#share').addEventListener('click', () => share(`${BRAND} 사주 풀이`,
     `나는 ${m.r.pillars.day.hangul}일주, “${dm.title}”래. ${dm.keywords.map((k) => `#${k}`).join(' ')}\n소름 돋게 맞는데… 너도 해 봐!`));
   app.querySelector('#save-card').addEventListener('click', () => saveShareCard(m));
+  app.querySelector('#save-pdf').addEventListener('click', (e) => exportPdf(e.currentTarget, () => sajuDocument(m, BRAND), '사주 풀이', 'dalbit-bosal-saju.pdf'));
 };
+
+// ───────── PDF 저장 ─────────
+async function exportPdf(button, buildBlocks, footer, filename) {
+  const label = button.innerHTML;
+  button.disabled = true;
+  button.textContent = 'PDF를 만들고 있어요…';
+  try {
+    const { renderPdf, savePdf } = await import('./pdf.js');
+    const blob = await renderPdf(buildBlocks(), { brand: BRAND, footer });
+    const how = await savePdf(blob, filename);
+    if (how === 'downloaded') toast('PDF를 저장했어요. 다운로드 폴더(파일 앱)를 확인해 주세요.', 4000);
+  } catch {
+    toast('PDF를 만들지 못했어요. 사파리나 크롬 브라우저에서 다시 시도해 주세요.', 4000);
+  } finally {
+    button.disabled = false;
+    button.innerHTML = label;
+  }
+}
 
 // ───────── 결과 카드 이미지 ─────────
 const loadImage = (svg) => new Promise((resolve, reject) => {
@@ -621,17 +769,17 @@ async function saveShareCard({ input, r, astro }) {
     ctx.fillStyle = 'rgba(246,239,224,0.65)'; ctx.font = `500 30px ${sans}`;
     ctx.fillText(`${r.animal}띠 · 태양 ${SIGNS[astro.sun].name} · 달 ${SIGNS[astro.moon].name}`, W / 2, 920 + lines.length * 60);
     ctx.fillStyle = '#d4b26a'; ctx.font = `600 38px ${serif}`;
-    ctx.fillText('마음결', W / 2, H - 112);
+    ctx.fillText(BRAND, W / 2, H - 112);
     ctx.fillStyle = 'rgba(246,239,224,0.6)'; ctx.font = `400 26px ${sans}`;
     ctx.fillText(siteUrl().replace(/^https?:\/\//, '').replace(/\/$/, ''), W / 2, H - 70);
 
     const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
-    const file = new File([blob], 'maeumgyeol.png', { type: 'image/png' });
+    const file = new File([blob], 'dalbit-bosal.png', { type: 'image/png' });
     if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: '마음결 사주 풀이', text: `나는 “${dm.title}”. 너도 해 봐! ${siteUrl()}` }); } catch { /* 취소 */ }
+      try { await navigator.share({ files: [file], title: `${BRAND} 사주 풀이`, text: `나는 “${dm.title}”. 너도 해 봐! ${siteUrl()}` }); } catch { /* 취소 */ }
       return;
     }
-    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'maeumgyeol.png' });
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'dalbit-bosal.png' });
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     toast('결과 카드를 저장했어요.');
@@ -685,7 +833,8 @@ function matchResult(a, b) {
     <h3 class="h-sub">서로에게 줄 수 있는 것</h3>
     <p>${esc(a.input.name) || '나'}에게 필요한 기운은 <b style="color:${EL(a.r.strength.yongElement).color}">${EL(a.r.strength.yongElement).hanja}</b>, ${esc(b.input.name) || '상대'}에게 필요한 기운은 <b style="color:${EL(b.r.strength.yongElement).color}">${EL(b.r.strength.yongElement).hanja}</b>이에요.
     ${c.parts[2].key === '높음' ? '두 사람은 서로에게 부족한 기운을 넉넉히 가지고 있어, 함께 있을 때 마음이 편안해지고 운이 살아나요.' : c.parts[2].key === '보통' ? '서로의 부족한 부분을 어느 정도 채워 줄 수 있어요. 상대가 힘들어할 때 내가 가진 강점을 나눠 주세요.' : '서로에게 필요한 기운을 직접 채워 주기는 어려운 조합이에요. 그 대신 각자의 시간과 취미를 존중할 때 관계가 건강해져요.'}</p>
-  </section>`;
+  </section>
+  ${psychNote('match')}`;
 }
 
 function renderMatch() {
@@ -694,14 +843,10 @@ function renderMatch() {
   const m = me();
   const invite = store.invite;
   if (!m) {
-    return `<section class="page-head">
-      <p class="eyebrow">宮合</p><h1>궁합 보기</h1>
-      <p class="lead">${invite ? `<strong>${esc(invite.name) || '친구'}</strong>님이 궁합을 보고 싶어 해요.<br>내 생년월일을 입력하면 바로 결과가 나와요.` : '먼저 내 사주 정보를 입력해 주세요.'}</p>
-    </section>
+    return `${guide(invite ? `<strong>${esc(invite.name) || '친구'}</strong>님이 궁합을 보고 싶어 해요. 내 생일만 알려 주시면 바로 결과가 나와요.` : '궁합을 보려면 먼저 내 생일을 알려 주세요.', { mood: 'happy' })}
     <div class="actions"><a class="btn btn-primary btn-lg" href="#/saju">내 정보 입력하기</a></div>`;
   }
-  const partnerInput = invite ?? store.partner;
-  const partner = reading(partnerInput);
+  const partner = reading(invite ?? store.partner);
   if (partner) {
     return `${matchResult(m, partner)}
     <div class="actions">
@@ -711,10 +856,7 @@ function renderMatch() {
     </div>`;
   }
   return `
-  <section class="page-head">
-    <p class="eyebrow">宮合</p><h1>궁합 보기</h1>
-    <p class="lead">연인, 친구, 가족 누구와도 볼 수 있어요.</p>
-  </section>
+  ${guide('연인, 친구, 가족 누구와도 볼 수 있어요. 링크를 보내거나 상대 생일을 직접 넣어 주세요.')}
   <section class="panel">
     ${sectionTitle('share', '궁합 링크 보내기')}
     <p>링크를 받은 사람이 자기 생일을 입력하면, 두 사람의 궁합이 바로 나와요.</p>
@@ -724,28 +866,27 @@ function renderMatch() {
   <form class="panel form" id="partner-form" novalidate>
     ${sectionTitle('hearts', '상대 정보 직접 입력하기')}
     <label class="field"><span>상대 이름 <small>(선택)</small></span><input name="name" maxlength="10" placeholder="예: 민준"></label>
-    <label class="field"><span>상대 생년월일 <small>(양력)</small></span>
-      <input name="date" type="date" required min="1920-01-01" max="${today()}">
-      <small class="error" id="pdate-error" hidden>생년월일을 입력해 주세요.</small></label>
-    <label class="field"><span>태어난 시간 <small>(모르면 비워 두세요)</small></span><input name="time" type="time"></label>
+    ${birthFields({ unknownTime: true })}
     <button class="btn" type="submit">궁합 결과 보기</button>
   </form>`;
 }
 renderMatch.mount = () => {
   const m = me();
   if (!m) return;
-  app.querySelector('#send-invite')?.addEventListener('click', () => share('마음결 궁합',
+  app.querySelector('#send-invite')?.addEventListener('click', () => share(`${BRAND} 궁합`,
     `${m.input.name ? `${m.input.name}님이` : '친구가'} 궁합을 보고 싶어 해요. 생일만 입력하면 바로 나와요!`, inviteLink(m.input)));
   const form = app.querySelector('#partner-form');
-  form?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const f = form.elements;
-    form.querySelector('#pdate-error').hidden = !!f.date.value;
-    if (!f.date.value) { f.date.focus(); return; }
-    store.partner = { name: f.name.value.trim(), date: f.date.value, time: f.time.value, unknownTime: !f.time.value, gender: null, correction: true };
-    save();
-    navigate();
-  });
+  if (form) {
+    wireBirth(form);
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const birth = readBirth(form, { requireTime: false });
+      if (!birth) return;
+      store.partner = { name: form.elements.name.value.trim(), gender: null, correction: true, ...birth };
+      save();
+      navigate();
+    });
+  }
   app.querySelector('#reset-match')?.addEventListener('click', () => {
     store.invite = null; store.partner = null; save();
     history.replaceState(null, '', '#/match');
@@ -753,7 +894,55 @@ renderMatch.mount = () => {
   });
   app.querySelector('#share-match')?.addEventListener('click', () => {
     const score = app.querySelector('.duo-score b').textContent;
-    share('마음결 궁합', `우리 궁합 ${score}점! “${app.querySelector('.match-hero h1').textContent}” 너도 궁금한 사람이랑 해 봐.`, inviteLink(m.input));
+    share(`${BRAND} 궁합`, `우리 궁합 ${score}점! “${app.querySelector('.match-hero h1').textContent}” 너도 궁금한 사람이랑 해 봐.`, inviteLink(m.input));
+  });
+};
+
+// ───────── 마음 쉼터 ─────────
+function renderRest() {
+  const s = store.stress?.result;
+  const item = (href, art, title, sub) => `<a class="menu-row" href="${href}">${icon(art, 30)}<span><strong>${title}</strong><small>${sub}</small></span><span class="chev" aria-hidden="true">›</span></a>`;
+  return `
+  ${guide('여기는 잠깐 쉬어 가는 곳이에요. 마음이 가는 것부터 천천히 해 보세요.', { mood: 'happy' })}
+  <nav class="menu-list" aria-label="마음 쉼터">
+    ${item('#/breathe', 'moonstar', '1분 숨 고르기', '보리와 함께 천천히 여섯 번 숨 쉬기')}
+    ${item('#/card', 'cards', '오늘의 위로 카드', store.card?.date === today() ? '오늘 뽑은 카드 다시 보기' : '하루 한 장, 나를 위한 한마디')}
+    ${item(s ? '#/result' : '#/test', 'pulse', '마음 테스트', s ? `내 유형: ${TYPES[s.type].name}` : '스트레스 유형 15문항 · 약 3분')}
+    ${item('#/report', 'scroll', '마음 리포트', '사주와 마음 테스트를 엮은 맞춤 처방')}
+  </nav>`;
+}
+
+// 숨 고르기: 4초 들이쉬고 6초 내쉬기 × 6회 = 1분
+function renderBreathe() {
+  return `
+  <section class="breathe">
+    <p class="eyebrow">1분 숨 고르기</p>
+    <div class="breath-stage">
+      <div class="breath-circle" id="breath-circle"><span class="breath-core">${rabbit(72, 'happy')}</span></div>
+    </div>
+    <p class="breath-text" id="breath-text" aria-live="polite">편안한 자세로 앉아 주세요</p>
+    <p class="muted small" id="breath-count">4초 들이쉬고, 6초 내쉬어요</p>
+    <div class="actions"><button type="button" class="btn btn-primary btn-lg" id="breath-start">시작하기</button></div>
+  </section>
+  ${psychNote('breathe')}`;
+}
+renderBreathe.mount = () => {
+  const circle = app.querySelector('#breath-circle');
+  const text = app.querySelector('#breath-text');
+  const count = app.querySelector('#breath-count');
+  const btn = app.querySelector('#breath-start');
+  let timers = [];
+  const stop = () => { timers.forEach(clearTimeout); timers = []; circle.classList.remove('in', 'out'); };
+  cleanup = stop;
+  btn.addEventListener('click', () => {
+    stop();
+    btn.textContent = '다시 시작';
+    const rounds = 6;
+    for (let i = 0; i < rounds; i++) {
+      timers.push(setTimeout(() => { circle.classList.remove('out'); circle.classList.add('in'); text.textContent = '코로 천천히 들이쉬어요'; count.textContent = `${i + 1} / ${rounds}`; }, i * 10000));
+      timers.push(setTimeout(() => { circle.classList.remove('in'); circle.classList.add('out'); text.textContent = '입으로 길게 내쉬어요'; }, i * 10000 + 4000));
+    }
+    timers.push(setTimeout(() => { circle.classList.remove('in', 'out'); text.textContent = '잘했어요. 한결 가벼워졌나요?'; count.textContent = '언제든 다시 와서 쉬어 가세요'; btn.textContent = '한 번 더'; }, rounds * 10000));
   });
 };
 
@@ -774,7 +963,7 @@ function renderTest() {
     <div class="scale" role="radiogroup" aria-labelledby="q-text">
       ${SCALE.map((o) => `<button type="button" class="scale-btn ${answers[qIndex] === o.value ? 'is-selected' : ''}" role="radio" aria-checked="${answers[qIndex] === o.value}" data-value="${o.value}"><span class="dot dot-${o.value}" aria-hidden="true"></span>${o.label}</button>`).join('')}
     </div>
-    <div class="row"><button type="button" class="btn btn-ghost" id="prev" ${qIndex === 0 ? 'disabled' : ''}>이전</button></div>
+    <div class="row"><button type="button" class="btn btn-ghost" id="prev" ${qIndex === 0 ? 'disabled' : ''}>이전 문항</button></div>
   </section>`;
 }
 renderTest.mount = () => {
@@ -797,7 +986,7 @@ const careBox = () => `<div class="help"><strong>혼자 감당하지 않아도 �
 
 function renderResult() {
   const r = store.stress?.result;
-  if (!r) return emptyState('아직 테스트 결과가 없어요.', '#/test', '테스트 시작하기');
+  if (!r) return emptyState('아직 마음 테스트를 하지 않으셨어요. 3분이면 돼요.', '#/test', '테스트 시작하기');
   const t = TYPES[r.type];
   const second = TYPES[r.second];
   const level = LEVELS.find((l) => l.key === r.level);
@@ -805,10 +994,11 @@ function renderResult() {
   return `
   <section class="result-hero" style="--el:${t.color}">
     <p class="eyebrow">지금 나의 스트레스 유형</p>
-    ${medallion(t.art, t.color, [], 150)}
+    <div class="medal-3d">${medallion(t.art, t.color, [], 150)}</div>
     <h1>${t.name}</h1>
     <p class="tagline">${t.tagline}</p>
   </section>
+  ${guide('솔직하게 답해 주셔서 고마워요. 지금의 마음을 같이 들여다봐요.')}
   <section class="panel">
     ${sectionTitle('pulse', '지금 나의 스트레스 수준')}
     <div class="meter" aria-label="스트레스 수준 ${levelIdx + 1}/4단계">${LEVELS.map((l, i) => `<span class="${i <= levelIdx ? 'on' : ''} lv-${i}"></span>`).join('')}</div>
@@ -828,6 +1018,7 @@ function renderResult() {
     <ol class="care">${t.care.map((c) => `<li><span class="care-when">${c.when}</span><p>${c.text}</p></li>`).join('')}</ol>
     <div class="callout"><strong>피해야 할 것</strong><p>${t.avoid}</p></div>
   </section>
+  ${psychNote(r.type)}
   <section class="panel">
     ${sectionTitle('star', '유형별 점수')}
     <div class="bars">
@@ -836,7 +1027,8 @@ function renderResult() {
     <p class="muted">두 번째로 높은 유형은 <strong>${second.name}</strong>이에요. 상황에 따라 이 모습도 함께 나타날 수 있어요.</p>
   </section>
   <div class="actions">
-    <a class="btn btn-primary" href="#/card">나를 위한 위로 카드 뽑기</a>
+    <a class="btn btn-primary" href="#/breathe">보리와 1분 숨 고르기</a>
+    <a class="btn" href="#/card">나를 위한 위로 카드 뽑기</a>
     <a class="btn" href="${store.me ? '#/report' : '#/saju'}">${store.me ? '사주와 엮은 마음 리포트 보기' : '사주까지 보고 마음 리포트 받기'}</a>
     <button type="button" class="btn btn-ghost" id="share">${icon('share', 18)}결과 공유하기</button>
     <a class="btn btn-ghost" href="#/test">다시 테스트하기</a>
@@ -846,7 +1038,7 @@ renderResult.mount = () => {
   const r = store.stress?.result;
   if (!r) return;
   const t = TYPES[r.type];
-  app.querySelector('#share')?.addEventListener('click', () => share('마음결 마음 테스트', `나의 스트레스 유형은 ${t.emoji} ${t.name}! ${t.tagline}\n너도 해 봐.`));
+  app.querySelector('#share')?.addEventListener('click', () => share(`${BRAND} 마음 테스트`, `나의 스트레스 유형은 ${t.emoji} ${t.name}! ${t.tagline}\n너도 해 봐.`));
 };
 
 // ───────── 위로 카드 ─────────
@@ -861,12 +1053,7 @@ function renderCard() {
   const drawn = c?.date === today();
   const typeName = store.stress?.result ? TYPES[store.stress.result.type].name : null;
   return `
-  <section class="page-head">
-    <p class="eyebrow">하루 한 장</p>
-    <h1>오늘의 위로 카드</h1>
-    <p class="lead">${drawn ? '오늘 당신에게 온 한마디예요.' : '마음이 끌리는 카드를 한 장 골라 보세요.'}</p>
-    ${typeName ? `<p class="muted small">${typeName}에게 필요한 말들로 준비했어요.</p>` : ''}
-  </section>
+  ${guide(drawn ? '오늘 당신에게 온 한마디예요. 천천히 읽어 보세요.' : `마음이 끌리는 카드를 한 장 골라 보세요.${typeName ? ` ${typeName}에게 필요한 말들로 준비했어요.` : ''}`, { mood: 'happy' })}
   <div class="deck ${drawn ? 'is-drawn' : ''}">
     ${[0, 1, 2].map((i) => `
       <button type="button" class="tarot ${drawn && c.slot === i ? 'is-flipped' : ''}" data-slot="${i}" ${drawn ? 'disabled' : ''} aria-label="${drawn && c.slot === i ? '오늘의 카드' : `${i + 1}번째 카드 뽑기`}">
@@ -880,7 +1067,8 @@ function renderCard() {
     <button type="button" class="btn btn-primary" id="share-card">이 말을 소중한 사람에게 보내기</button>
     <p class="muted center">내일 새로운 카드를 뽑을 수 있어요.</p>
     ${store.stress ? '' : '<a class="btn" href="#/test">내 유형에 맞는 카드 받기 (마음 테스트)</a>'}
-  </div>` : ''}`;
+  </div>
+  ${psychNote('card')}` : ''}`;
 }
 renderCard.mount = () => {
   app.querySelectorAll('.tarot:not([disabled])').forEach((b) => b.addEventListener('click', () => {
@@ -894,7 +1082,7 @@ renderCard.mount = () => {
     b.classList.add('is-flipped');
     setTimeout(navigate, 1100);
   }));
-  app.querySelector('#share-card')?.addEventListener('click', () => share('마음결 오늘의 위로 카드', `“${store.card.message}”\n— 마음결, 오늘의 위로 카드`));
+  app.querySelector('#share-card')?.addEventListener('click', () => share(`${BRAND} 오늘의 위로 카드`, `“${store.card.message}”\n— ${BRAND}, 오늘의 위로 카드`));
 };
 
 // ───────── 마음 리포트 (사주 + 마음 테스트) ─────────
@@ -902,15 +1090,11 @@ function renderReport() {
   const s = store.stress?.result;
   const m = me();
   if (!s || !m) {
-    return `<section class="panel center">
-      ${icon('scroll', 44, 'gold')}
-      <h1 class="h-sec center-title">마음 리포트</h1>
-      <p>사주 풀이와 마음 테스트를 모두 마치면, 타고난 기질과 지금의 마음을 엮은 맞춤 리포트가 열려요.</p>
+    return `${guide('사주 풀이와 마음 테스트를 모두 마치면, 타고난 기질과 지금의 마음을 엮은 맞춤 리포트를 써 드릴게요.')}
       <div class="actions">
         ${m ? '<span class="done">✓ 사주 입력 완료</span>' : '<a class="btn btn-primary" href="#/saju">사주 입력하기</a>'}
         ${s ? '<span class="done">✓ 마음 테스트 완료</span>' : '<a class="btn btn-primary" href="#/test">마음 테스트 하기</a>'}
-      </div>
-    </section>`;
+      </div>`;
   }
   const { input, r } = m;
   const t = TYPES[s.type];
@@ -924,7 +1108,7 @@ function renderReport() {
   return `
   <article class="report">
     <header class="page-head">
-      <p class="eyebrow">${dateStr} · 마음결 리포트</p>
+      <p class="eyebrow">${dateStr} · ${BRAND} 마음 리포트</p>
       <h1>${who}의 마음 지도</h1>
       <div class="report-badges">
         <span style="--el:${dmEl.color}">${icon(dm.art, 18)}${dm.title}</span>
@@ -951,22 +1135,44 @@ function renderReport() {
         <li><span class="care-when">용신 채우기</span><p>${who}에게 가장 필요한 ${yong.hanja}(${yong.name})의 기운을 더해 주세요. ${yong.boost}.</p></li>
       </ol>
     </section>
+    ${psychNote(s.type)}
     <section class="panel quote-panel">
       <h2 class="h-sec">4. ${who}에게 보내는 편지</h2>
       <p>${dm.caution}</p>
       <p>${t.avoid}</p>
       <blockquote>“${esc(card)}”</blockquote>
-      <p class="sign">— 마음결 드림</p>
+      <p class="sign-off">— ${BRAND} 드림</p>
     </section>
   </article>
   <div class="actions">
-    <button type="button" class="btn btn-primary" id="print">리포트 저장하기 (PDF)</button>
-    <a class="btn btn-ghost" href="#/">처음으로</a>
+    <button type="button" class="btn btn-primary" id="save-pdf">${icon('download', 20)}리포트를 PDF로 저장</button>
+    <a class="btn btn-ghost" href="#/rest">마음 쉼터로</a>
   </div>`;
 }
 renderReport.mount = () => {
-  app.querySelector('#print')?.addEventListener('click', () => window.print());
+  const s = store.stress?.result;
+  const m = me();
+  if (!s || !m) return;
+  const card = store.card?.date === today() ? store.card.message : TYPES[s.type].messages[0];
+  app.querySelector('#save-pdf').addEventListener('click', (e) => exportPdf(e.currentTarget, () => reportDocument(m, s, card, BRAND), '마음 리포트', 'dalbit-bosal-report.pdf'));
 };
+
+// ───────── 풀이의 근거 ─────────
+function renderAbout() {
+  const list = (rows) => `<dl class="about-list">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+  return `
+  ${guide(`${BRAND}의 풀이가 무엇에 근거하는지, 숨김없이 알려 드릴게요.`)}
+  <section class="panel">${sectionTitle('scroll', '사주명리의 뿌리')}${list(ABOUT.history)}</section>
+  <section class="panel">${sectionTitle('palja', '풀이에 쓰인 고전')}${list(ABOUT.classics)}</section>
+  <section class="panel">${sectionTitle('sun', '계산 방법')}${list(ABOUT.method)}</section>
+  <section class="panel">${sectionTitle('moonstar', '별자리와 이름 풀이')}${list(ABOUT.others)}</section>
+  <section class="panel quote-panel">${sectionTitle('pulse', '풀이를 현명하게 읽는 법')}<p>${ABOUT.wise}</p></section>
+  <section class="panel">
+    ${sectionTitle('brush', '참고 문헌')}
+    <ul class="refs">${ABOUT.refs.map((r) => `<li>${r}</li>`).join('')}</ul>
+    <p class="muted small">심리학 노트는 위 논문들의 핵심 결과를 요약한 것이에요. 이 앱의 풀이는 자기 이해와 재미를 위한 참고 자료이며, 전문적인 진단이나 상담을 대신하지 않아요.</p>
+  </section>`;
+}
 
 // ───────── 공통 ─────────
 document.getElementById('reset-btn').addEventListener('click', () => {
@@ -978,6 +1184,28 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   navigate();
   toast('모든 기록을 지웠어요.');
 });
+document.getElementById('back-btn').addEventListener('click', () => {
+  if (history.length > 1) history.back(); else location.hash = '#/';
+});
+
+// 하단 메뉴
+document.getElementById('tabbar').innerHTML = [
+  ['home', '#/', 'moonstar', '홈'], ['me', '#/me', 'palja', '내 사주'], ['match', '#/match', 'hearts', '궁합'], ['rest', '#/rest', 'pulse', '마음 쉼터'],
+].map(([key, href, art, label]) => `<a href="${href}" data-nav="${key}">${icon(art, 24)}<span>${label}</span></a>`).join('');
+
+// 밤하늘: 반짝이는 별과 천천히 흐르는 빛
+(function sky() {
+  const el = document.getElementById('sky');
+  if (!el) return;
+  let s = 20261112;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  let html = '<i class="glow g1"></i><i class="glow g2"></i><i class="shoot"></i>';
+  for (let i = 0; i < 46; i++) {
+    const size = 1 + rnd() * 2.2;
+    html += `<i class="star" style="left:${(rnd() * 100).toFixed(1)}%;top:${(rnd() * 100).toFixed(1)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;animation-delay:-${(rnd() * 6).toFixed(1)}s;animation-duration:${(3 + rnd() * 4).toFixed(1)}s"></i>`;
+  }
+  el.innerHTML = html;
+}());
 
 let installPrompt = null;
 const installBtn = document.getElementById('install-btn');

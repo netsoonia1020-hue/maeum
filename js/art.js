@@ -74,9 +74,11 @@ export function medallion(name, color = '#d4b26a', active = [], size = 190) {
     <defs><radialGradient id="mg-${name}" cx="50%" cy="40%" r="60%"><stop offset="0" stop-color="${color}" stop-opacity=".34"/><stop offset="1" stop-color="${color}" stop-opacity=".04"/></radialGradient></defs>
     <circle cx="100" cy="100" r="97" stroke="#d4b26a" stroke-opacity=".7" stroke-width="1.200"/>
     <circle cx="100" cy="100" r="93" stroke="#d4b26a" stroke-opacity=".3" stroke-width=".8"/>
-    <path d="${ring(60, 64, 67.5, 100, 100)}" stroke="#d4b26a" stroke-opacity=".5" stroke-width=".8"/>
-    <path d="${ring(12, 62, 68.5, 100, 100, 15)}" stroke="#d4b26a" stroke-opacity=".9" stroke-width="1.200"/>
-    <circle cx="100" cy="100" r="68.500" stroke="#d4b26a" stroke-opacity=".55" stroke-width=".8"/>
+    <g class="md-ring">
+      <path d="${ring(60, 64, 67.5, 100, 100)}" stroke="#d4b26a" stroke-opacity=".5" stroke-width=".8"/>
+      <path d="${ring(12, 62, 68.5, 100, 100, 15)}" stroke="#d4b26a" stroke-opacity=".9" stroke-width="1.200"/>
+      <circle cx="100" cy="100" r="68.500" stroke="#d4b26a" stroke-opacity=".55" stroke-width=".8"/>
+    </g>
     <g font-family="'Noto Serif KR', serif">${letters}</g>
     <circle cx="100" cy="100" r="58" fill="url(#mg-${name})" stroke="${color}" stroke-opacity=".6" stroke-width="1"/>
     <g transform="translate(58 58) scale(1.3125)" stroke="${color}" color="${color}" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] ?? ''}</g>

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>마음결 · 정통 사주 풀이와 궁합, 신년운세</title>
-  <meta name="description" content="절기와 진태양시까지 계산하는 정통 사주 풀이. 타고난 기질, 대운과 신년운세, 궁합, 별자리, 이름 풀이를 한 번에.">
+  <title>달빛보살 · 정통 사주 풀이와 궁합, 신년운세</title>
+  <meta name="description" content="절기와 진태양시까지 계산하는 정통 사주 풀이. 타고난 기질, 대운과 신년운세, 궁합, 별자리, 이름 풀이를 한 번에. 음력 생일도 지원해요.">
   <meta name="theme-color" content="#12102e">
   <meta name="color-scheme" content="dark">
   <link rel="manifest" href="manifest.webmanifest">
@@ -12,9 +12,9 @@
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="마음결">
+  <meta name="apple-mobile-web-app-title" content="달빛보살">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="마음결 · 태어난 순간에 새겨진 당신의 이야기">
+  <meta property="og:title" content="달빛보살 · 태어난 순간에 새겨진 당신의 이야기">
   <meta property="og:description" content="정통 사주 풀이 · 궁합 · 신년운세 · 별자리 · 이름 풀이">
   <meta property="og:image" content="https://netsoonia1020-hue.github.io/maeum/icons/og.png">
   <link rel="preload" href="fonts/NotoSerifKR-600.woff2" as="font" type="font/woff2" crossorigin>
@@ -22,23 +22,27 @@
   <script type="module" src="js/app.js"></script>
 </head>
 <body>
+  <div class="sky" id="sky" aria-hidden="true"></div>
+
   <header class="topbar">
-    <a href="#/" class="brand" aria-label="마음결 홈">
+    <button type="button" class="back-btn" id="back-btn" aria-label="뒤로 가기" hidden>‹</button>
+    <a href="#/" class="brand" aria-label="달빛보살 홈">
       <img src="icons/icon.svg" alt="" width="28" height="28">
-      <span>마음결</span>
+      <span>달빛보살</span>
     </a>
     <button type="button" class="install-btn" id="install-btn" hidden>앱 설치</button>
   </header>
 
   <main id="app" tabindex="-1">
-    <noscript><p class="panel">마음결은 자바스크립트가 필요해요. 브라우저 설정에서 자바스크립트를 켜 주세요.</p></noscript>
+    <noscript><p class="panel">달빛보살은 자바스크립트가 필요해요. 브라우저 설정에서 자바스크립트를 켜 주세요.</p></noscript>
   </main>
 
   <footer class="footer">
-    <p>마음결의 풀이는 자기 이해와 재미를 위한 참고 자료이며, 의학·법률·투자 등 전문적인 판단을 대신하지 않아요.</p>
+    <p>달빛보살의 풀이는 자기 이해와 재미를 위한 참고 자료이며, 의학·법률·투자 등 전문적인 판단을 대신하지 않아요. <a href="#/about">풀이의 근거</a></p>
     <p>입력한 정보는 이 기기에만 저장되며 서버로 전송되지 않아요. <button type="button" class="link-btn" id="reset-btn">기록 모두 지우기</button></p>
   </footer>
 
+  <nav class="tabbar" id="tabbar" aria-label="주 메뉴"></nav>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

@@ -352,3 +352,133 @@ p.sign { display: block; text-align: right; color: var(--ink-soft); font-family:
   main { width: 100%; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ═════════ 2차 개편: 입체감 · 움직임 · 캐릭터 ═════════ */
+
+/* ───── 밤하늘 ───── */
+.sky { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.sky .star { position: absolute; border-radius: 50%; background: #fff; opacity: 0.2; animation: twinkle 4s ease-in-out infinite; }
+@keyframes twinkle { 50% { opacity: 0.95; transform: scale(1.35); } }
+.sky .glow { position: absolute; width: 60vmax; height: 60vmax; border-radius: 50%; filter: blur(60px); opacity: 0.35; }
+.sky .g1 { left: -20vmax; top: 10%; background: radial-gradient(#4a2f8f, transparent 65%); animation: drift 26s ease-in-out infinite alternate; }
+.sky .g2 { right: -25vmax; top: 45%; background: radial-gradient(#1f4a8a, transparent 65%); animation: drift 34s ease-in-out infinite alternate-reverse; }
+@keyframes drift { to { transform: translate(8vmax, -6vmax) scale(1.15); } }
+.sky .shoot { position: absolute; top: 12%; left: 70%; width: 110px; height: 1.5px; background: linear-gradient(90deg, #fff, transparent); border-radius: 2px; opacity: 0; transform: rotate(-28deg); animation: shoot 11s ease-in 4s infinite; }
+@keyframes shoot { 0% { opacity: 0; translate: 0 0; } 3% { opacity: 1; } 9% { opacity: 0; translate: -46vw 24vw; } 100% { opacity: 0; translate: -46vw 24vw; } }
+
+/* ───── 상단 · 하단 메뉴 ───── */
+.topbar { justify-content: flex-start; gap: 6px; }
+.install-btn { margin-left: auto; }
+.back-btn { width: 40px; height: 40px; margin-left: -10px; border: 0; background: none; color: var(--gold-soft); font-size: 2rem; line-height: 1; cursor: pointer; border-radius: 50%; }
+.back-btn:active { background: var(--surface-2); }
+.footer { padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.footer a { color: var(--gold-soft); }
+.tabbar { position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); translate: -50% 0; z-index: 8; display: grid; grid-template-columns: repeat(4, 1fr); width: min(100% - 20px, 500px); padding: 6px; border-radius: 22px; background: rgb(24 22 58 / 0.82); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid var(--gold-line); box-shadow: 0 16px 40px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.08); }
+.tabbar a { display: grid; justify-items: center; gap: 2px; padding: 7px 4px 5px; border-radius: 16px; text-decoration: none; color: var(--ink-soft); font-size: 0.72rem; font-weight: 700; transition: color 0.2s, background 0.2s, transform 0.15s; }
+.tabbar a:active { transform: scale(0.94); }
+.tabbar a[aria-current="page"] { color: #241a04; background: linear-gradient(135deg, #f0d99f, #c4974a); box-shadow: 0 4px 14px rgb(212 178 106 / 0.35); }
+.toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
+
+/* ───── 입체감 ───── */
+.panel, .tile-card, .profile, .menu-row { background: linear-gradient(180deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.035)); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.09), 0 18px 36px -20px rgb(0 0 0 / 0.75); }
+.quote-panel { background: linear-gradient(160deg, rgb(212 178 106 / 0.16), rgb(255 255 255 / 0.04) 70%); }
+.year { background: linear-gradient(170deg, color-mix(in srgb, var(--el) 13%, transparent), rgb(255 255 255 / 0.04) 55%); }
+.result-hero { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.1), 0 26px 50px -24px rgb(0 0 0 / 0.8); }
+.btn-primary { box-shadow: 0 4px 0 #8f6c2c, 0 14px 28px rgb(212 178 106 / 0.24); transition: transform 0.1s ease, box-shadow 0.1s ease; }
+.btn-primary:active { transform: translateY(3px); box-shadow: 0 1px 0 #8f6c2c, 0 6px 14px rgb(212 178 106 / 0.2); }
+.btn:not(.btn-primary, .btn-ghost) { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 3px 0 rgb(0 0 0 / 0.35); }
+.btn:not(.btn-primary, .btn-ghost):active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 0 1px 0 rgb(0 0 0 / 0.35); }
+.tile-card:hover { transform: translateY(-3px); }
+.ptile, .nchar { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 8px 16px -8px rgb(0 0 0 / 0.7); }
+.medal-3d { perspective: 700px; }
+.medal-3d .medallion { animation: rise 0.7s cubic-bezier(.2,.9,.3,1) both, float3d 7s ease-in-out 0.7s infinite; filter: drop-shadow(0 18px 22px rgb(0 0 0 / 0.5)); }
+@keyframes float3d { 0%, 100% { transform: translateY(0) rotateX(0) rotateY(0); } 25% { transform: translateY(-5px) rotateX(5deg) rotateY(-6deg); } 75% { transform: translateY(-3px) rotateX(-4deg) rotateY(6deg); } }
+.md-ring { transform-origin: 50% 50%; animation: spin 90s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.hero-art { animation: hero-breathe 9s ease-in-out infinite; }
+@keyframes hero-breathe { 50% { transform: scale(1.025) translateY(-3px); } }
+
+/* 스크롤하면 떠오르는 패널 */
+.reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s cubic-bezier(.2,.8,.3,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+/* ───── 달토끼 보리 ───── */
+.rabbit { position: relative; display: inline-block; flex: none; animation: hop 2.8s ease-in-out infinite; filter: drop-shadow(0 0 10px rgb(246 226 168 / 0.35)); }
+.rabbit svg { display: block; position: relative; z-index: 1; }
+.rabbit-shadow { position: absolute; left: 14%; right: 14%; bottom: -5px; height: 9px; border-radius: 50%; background: rgb(0 0 0 / 0.4); filter: blur(3px); animation: hop-shadow 2.8s ease-in-out infinite; }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes hop-shadow { 50% { transform: scale(0.78); opacity: 0.6; } }
+.rb-ears { transform-box: fill-box; transform-origin: 50% 100%; animation: ears 5.6s ease-in-out infinite; }
+@keyframes ears { 0%, 82%, 100% { transform: rotate(0); } 86% { transform: rotate(-6deg); } 90% { transform: rotate(5deg); } 94% { transform: rotate(-3deg); } }
+.rb-closed { opacity: 0; animation: blink-closed 4.4s steps(1) infinite; }
+.rb-open { animation: blink-open 4.4s steps(1) infinite; }
+@keyframes blink-closed { 0%, 100% { opacity: 0; } 46%, 49% { opacity: 1; } 49.01% { opacity: 0; } }
+@keyframes blink-open { 0%, 100% { opacity: 1; } 46%, 49% { opacity: 0; } 49.01% { opacity: 1; } }
+.rabbit-happy { animation-duration: 1.9s; }
+.rabbit-happy .rabbit-shadow { animation-duration: 1.9s; }
+
+.guide { display: flex; align-items: flex-end; gap: 12px; margin: 14px 2px 16px; }
+.bubble { position: relative; flex: 1; padding: 12px 16px; border-radius: 18px 18px 18px 4px; background: #fffaf0; color: #2a2440; box-shadow: 0 12px 26px -12px rgb(0 0 0 / 0.7); animation: bubble-in 0.5s cubic-bezier(.2,1.3,.4,1) 0.15s both; }
+.bubble::before { content: ""; position: absolute; left: -7px; bottom: 6px; border: 7px solid transparent; border-right-color: #fffaf0; border-left: 0; }
+.bubble small { display: block; font-size: 0.72rem; font-weight: 800; color: #9a7527; margin-bottom: 2px; }
+.bubble p { font-size: 0.95rem; line-height: 1.6; }
+.bubble strong { color: #1a1535; }
+@keyframes bubble-in { from { opacity: 0; transform: scale(0.9) translateX(-8px); } }
+
+/* ───── 풀이 준비 화면 ───── */
+.ritual { min-height: 70dvh; display: grid; place-content: center; justify-items: center; gap: 4px; text-align: center; }
+.ritual-ring .medallion { animation: spin 5s linear infinite; opacity: 0.85; }
+.ritual .rabbit { margin-top: -150px; margin-bottom: 70px; }
+.ritual-step { font-family: var(--serif); font-size: 1.1rem; color: var(--gold-soft); animation: pulse-text 1.3s ease-in-out infinite; }
+@keyframes pulse-text { 50% { opacity: 0.55; } }
+
+/* ───── 입력 ───── */
+.seg-3 { grid-template-columns: repeat(3, 1fr); margin-bottom: 8px; }
+.seg span { min-height: 48px; font-size: 0.95rem; }
+.date-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+.time-row { grid-template-columns: 1.6fr 1fr; }
+select { font: inherit; color: inherit; width: 100%; min-height: 52px; padding: 10px 34px 10px 14px; border-radius: 12px; border: 1px solid var(--gold-line); background: rgb(0 0 0 / 0.25) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23d4b26a' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center / 12px; -webkit-appearance: none; appearance: none; }
+select:focus-visible { border-color: var(--gold); outline: none; box-shadow: 0 0 0 3px rgb(212 178 106 / 0.25); }
+select:disabled { opacity: 0.4; }
+select option { background: #1b1942; color: var(--ink); }
+
+/* ───── 마음 쉼터 · 숨 고르기 ───── */
+.menu-list { display: grid; gap: 10px; }
+.menu-row { display: flex; align-items: center; gap: 14px; padding: 16px; border-radius: var(--radius); border: 1px solid var(--line); text-decoration: none; transition: transform 0.15s ease, border-color 0.15s ease; }
+.menu-row:active { transform: scale(0.98); }
+.menu-row:hover { border-color: var(--gold-line); }
+.menu-row .art { color: var(--gold); }
+.menu-row > span:nth-child(2) { display: grid; flex: 1; }
+.menu-row strong { font-family: var(--serif); font-weight: 600; font-size: 1.05rem; }
+.menu-row small { color: var(--ink-soft); font-size: 0.84rem; }
+
+.breathe { text-align: center; padding-top: 20px; }
+.breath-stage { display: grid; place-items: center; height: 300px; }
+.breath-circle { display: grid; place-items: center; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgb(246 226 168 / 0.5), rgb(212 178 106 / 0.14) 60%, transparent 72%); box-shadow: 0 0 0 1px var(--gold-line), 0 0 60px rgb(212 178 106 / 0.25), inset 0 0 40px rgb(246 226 168 / 0.2); transition: transform 4s cubic-bezier(.4,0,.4,1); }
+.breath-circle.in { transform: scale(1.85); transition-duration: 4s; }
+.breath-circle.out { transform: scale(1); transition-duration: 6s; }
+.breath-core { transition: transform 4s cubic-bezier(.4,0,.4,1); }
+.breath-circle.in .breath-core { transform: scale(0.6); transition-duration: 4s; }
+.breath-circle.out .breath-core { transform: scale(1); transition-duration: 6s; }
+.breath-core .rabbit, .breath-core .rabbit-shadow { animation: none; }
+.breath-text { font-family: var(--serif); font-size: 1.3rem; color: #fff8e8; margin-bottom: 4px; min-height: 2em; }
+
+/* ───── 근거 · 심리학 노트 ───── */
+.psych { margin: 0 0 12px; padding: 18px 20px; border-radius: var(--radius); background: linear-gradient(160deg, rgb(110 168 255 / 0.12), rgb(255 255 255 / 0.03)); border: 1px solid rgb(110 168 255 / 0.3); }
+.panel .psych { margin: 16px 0 0; }
+.psych-tag { display: inline-block; margin-bottom: 8px; padding: 1px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 800; color: #0f1a36; background: #9ec2ff; }
+.psych strong { display: block; font-family: var(--serif); font-weight: 600; font-size: 1.02rem; margin-bottom: 6px; }
+.psych p { font-size: 0.93rem; color: #dcd6ea; }
+.psych cite { display: block; margin-top: 8px; font-size: 0.74rem; font-style: normal; color: #9d97b8; }
+.classic-text { font-family: var(--serif); font-size: 1.45rem; letter-spacing: 0.14em; color: var(--gold-soft); margin-bottom: 10px; }
+.classic blockquote { margin-bottom: 10px; }
+.about-list { margin: 0; display: grid; gap: 14px; }
+.about-list dt { font-family: var(--serif); font-weight: 600; color: var(--gold-soft); margin-bottom: 2px; }
+.about-list dd { margin: 0; font-size: 0.94rem; color: #dcd6ea; }
+.refs { margin: 0 0 12px; padding-left: 1.1em; display: grid; gap: 8px; font-size: 0.8rem; color: var(--ink-soft); }
+.panel a, .muted a { color: var(--gold-soft); }
+.panel a.btn { color: var(--ink); }
+.panel a.btn-primary { color: #241a04; }
+p.sign-off { text-align: right; color: var(--ink-soft); font-family: var(--serif); }
+
+@media print { .sky, .tabbar, .guide, .back-btn { display: none !important; } .reveal { opacity: 1 !important; transform: none !important; } }

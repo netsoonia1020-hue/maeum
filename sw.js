@@ -1,5 +1,5 @@
 // 오프라인에서도 열리도록 앱 셸을 캐시한다. 파일을 바꾸면 VERSION을 올릴 것.
-const VERSION = 'maeum-v2';
+const VERSION = 'maeum-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -7,6 +7,12 @@ const ASSETS = [
   './manifest.webmanifest',
   './fonts/NotoSerifKR-600.woff2',
   './js/app.js',
+  './js/mascot.js',
+  './js/doc.js',
+  './js/pdf.js',
+  './js/lunar.js',
+  './js/data-notes.js',
+  './js/vendor/korean-lunar-calendar.js',
   './js/art.js',
   './js/saju.js',
   './js/astro.js',
